@@ -1,3 +1,4 @@
+import asyncio
 import types
 
 from aiogram import Dispatcher
@@ -9,13 +10,8 @@ from aiogram.utils import executor
 
 from dotenv import load_dotenv
 
-from files.data.db_session import global_init, create_session
-
 from db_using import *
 from msg_funcs import *
-
-global_init('files/db/info.db')
-db_sess = create_session()
 
 load_dotenv()
 
@@ -122,6 +118,7 @@ async def save_video(message: types.Message, state: FSMContext):
             file_path = await download_doc(message, bot)
             await state.update_data(path='files/' + file_path)
         await state.update_data(type='video')
+        await bot.send_message(message.chat.id, 'Видео сохранено!')
         await bot.send_message(message.chat.id,
                                'Отправьте язык текста на видео в формате: eng, rus, fra и т.д.\n'
                                'Если в тексте используется несколько языков, то в формате rus+eng, deu+fra и т.д.')
@@ -132,8 +129,8 @@ async def save_video(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=MySG.send_lang_and_get_ocr_result.state, content_types=['text'])
 async def get_lang(message: types.Message, state: FSMContext):
+    global started
     try:
-        global started
         lang = message.text
         data = await state.get_data()
         type_of_ocr = data.get('type')
@@ -141,24 +138,28 @@ async def get_lang(message: types.Message, state: FSMContext):
         lang_checker = all(True for language in lang.split('+') if language in pytesseract.get_languages())
         if lang_checker:
             if type_of_ocr == 'photo':
-                insert_photo_into_db(path, lang, message.from_user)
+                await insert_photo_into_db(path, lang, message.from_user)
                 img_text = await ocr(path, lang)
                 await bot.send_message(message.chat.id, img_text)
                 await state.finish()
                 started = False
             elif type_of_ocr == 'video':
-                insert_video_into_db(path, lang, message.from_user)
+                await insert_video_into_db(path, lang, message.from_user)
                 await bot.send_message(message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
                 video_text = await video_ocr(path, lang)
-                await bot.send_message(message.chat.id, video_text)
+                for frame_text in video_text:
+                    await bot.send_message(message.chat.id, frame_text)
                 await state.finish()
                 started = False
         else:
             await bot.send_message(message.chat.id,
                                    'Неверный формат ввода. Проверьте правильность ввода и повторите попытку!')
-    except Exception:
-        await bot.send_message(message.chat.id, 'Ошибка!')
+    except Exception as e:
+
+        await bot.send_message(message.chat.id, f'Ошибка: {e}')
+        started = False
+        await state.finish()
 
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(executor.start_polling(dp, skip_updates=True))

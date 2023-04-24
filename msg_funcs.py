@@ -1,5 +1,6 @@
 import os
 
+import aiomisc
 import imagehash
 import numpy
 import cv2
@@ -30,7 +31,8 @@ async def download_video(message: Message, bot: Bot):
     return file_path
 
 
-async def ocr(path: str, lang: str):
+@aiomisc.threaded
+def ocr(path: str, lang: str):
     img = Image.open(path)
     img_text = pytesseract.image_to_string(img, lang=lang)
     return img_text
@@ -51,12 +53,13 @@ def already_saved_frame(frame_path: str):
     frame_list_to_check.remove(frame_path.split('/')[2])
     for other_frame in frame_list_to_check:
         other_frame = Image.open(f'files/frames/{other_frame}')
-        if two_image_equals(frame, other_frame):
+        has_duplicate = two_image_equals(frame, other_frame)
+        if has_duplicate:
             return True
     return False
 
 
-async def get_video_frames(path: str):
+def get_video_frames(path: str):
     for file in os.listdir('files/frames'):
         os.remove(f'files/frames/{file}')
     os.rmdir('files/frames')
@@ -72,7 +75,8 @@ async def get_video_frames(path: str):
         path_to_save = f'files/frames/frame_{i}.png'
         if i > 0:
             cv2.imwrite(path_to_save, frame)
-            if already_saved_frame(path_to_save):
+            has_dup = already_saved_frame(path_to_save)
+            if has_dup:
                 os.remove(path_to_save)
         else:
             cv2.imwrite(path_to_save, frame)
@@ -81,12 +85,12 @@ async def get_video_frames(path: str):
 
 
 async def video_ocr(path: str, lang: str):
-    await get_video_frames(path)
+    get_video_frames(path)
     video_text = {}
     listdir = sorted(os.listdir('files/frames'), key=lambda x: int(x.split('.')[0].split('_')[-1]))
     for i, frame in enumerate(listdir):
         image_txt = await ocr(f'files/frames/{frame}', lang=lang)
         video_text[f'Кадр {i + 1}'] = image_txt
     good_format = [f'{key}\n\n{value}' for key, value in video_text.items()]
-    to_return = '\n'.join(good_format)
-    return to_return
+    return good_format
+
