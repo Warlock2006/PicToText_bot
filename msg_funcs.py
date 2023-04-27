@@ -1,5 +1,5 @@
 import os
-
+from deep_translator import GoogleTranslator
 import aiomisc
 import imagehash
 import numpy
@@ -8,6 +8,13 @@ import pytesseract
 from PIL import Image
 from aiogram.types import Message
 from aiogram import Bot
+
+
+@aiomisc.threaded
+def translate(text: str, lang_to_translate: str):
+    translator = GoogleTranslator(source='auto', target=lang_to_translate)
+    translated_text = translator.translate(text)
+    return translated_text
 
 
 async def download_doc(message: Message, bot: Bot):
@@ -93,4 +100,3 @@ async def video_ocr(path: str, lang: str):
         video_text[f'Кадр {i + 1}'] = image_txt
     good_format = [f'{key}\n\n{value}' for key, value in video_text.items()]
     return good_format
-

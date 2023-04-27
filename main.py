@@ -1,6 +1,3 @@
-import asyncio
-import types
-
 from aiogram import Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -27,7 +24,8 @@ class MySG(StatesGroup):
     start = State()
     send_photo = State()
     send_video = State()
-    send_lang_and_get_ocr_result = State()
+    send_lang = State()
+    send_lang_to_translate_and_ocr = State()
 
 
 @dp.message_handler(lambda x: not started, commands="start")
@@ -103,7 +101,7 @@ async def save_picture(message: types.Message, state: FSMContext):
         await bot.send_message(message.chat.id,
                                'Отправьте язык текста на картинке в формате: eng, rus, fra и т.д.\n'
                                'Если в тексте используется несколько языков, то в формате rus+eng, deu+fra и т.д.')
-        await state.set_state(MySG.send_lang_and_get_ocr_result.state)
+        await state.set_state(MySG.send_lang.state)
     except Exception:
         await bot.send_message(message.chat.id, 'Ошибка!')
 
@@ -122,35 +120,32 @@ async def save_video(message: types.Message, state: FSMContext):
         await bot.send_message(message.chat.id,
                                'Отправьте язык текста на видео в формате: eng, rus, fra и т.д.\n'
                                'Если в тексте используется несколько языков, то в формате rus+eng, deu+fra и т.д.')
-        await state.set_state(MySG.send_lang_and_get_ocr_result.state)
+        await state.set_state(MySG.send_lang.state)
     except Exception:
         await bot.send_message(message.chat.id, 'Ошибка!')
 
 
-@dp.message_handler(state=MySG.send_lang_and_get_ocr_result.state, content_types=['text'])
+@dp.message_handler(state=MySG.send_lang.state, content_types=['text'])
 async def get_lang(message: types.Message, state: FSMContext):
     global started
     try:
-        lang = message.text
         data = await state.get_data()
-        type_of_ocr = data.get('type')
-        path = data.get('path')
-        lang_checker = all(True for language in lang.split('+') if language in pytesseract.get_languages())
+        lang = message.text
+        lang_checker = all(True if language in pytesseract.get_languages() else False for language in lang.split('+'))
+        _type = data.get('type')
+        if _type == 'photo':
+            _type = 'картинки'
+        elif _type == 'video':
+            _type = 'видео'
         if lang_checker:
-            if type_of_ocr == 'photo':
-                await insert_photo_into_db(path, lang, message.from_user)
-                img_text = await ocr(path, lang)
-                await bot.send_message(message.chat.id, img_text)
-                await state.finish()
-                started = False
-            elif type_of_ocr == 'video':
-                await insert_video_into_db(path, lang, message.from_user)
-                await bot.send_message(message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
-                video_text = await video_ocr(path, lang)
-                for frame_text in video_text:
-                    await bot.send_message(message.chat.id, frame_text)
-                await state.finish()
-                started = False
+            await state.update_data(lang=lang)
+            buttons = [InlineKeyboardButton('✅Да', callback_data='yes'),
+                       InlineKeyboardButton('❌Нет', callback_data='no')]
+            keyboard = InlineKeyboardMarkup().add(*buttons)
+            await state.update_data(user_=message.from_user)
+            await bot.send_message(message.chat.id, f'Нужно перевести текст с {_type} на другой язык?',
+                                   reply_markup=keyboard)
+
         else:
             await bot.send_message(message.chat.id,
                                    'Неверный формат ввода. Проверьте правильность ввода и повторите попытку!')
@@ -161,5 +156,62 @@ async def get_lang(message: types.Message, state: FSMContext):
         await state.finish()
 
 
+@dp.callback_query_handler(state=MySG.send_lang.state, text=['no'])
+async def no_button_handler(callback: CallbackQuery, state: FSMContext):
+    global started
+    data = await state.get_data()
+    lang = data.get('lang')
+    path = data.get('path')
+    user = data.get('user_')
+    type_of_ocr = data.get('type')
+    if type_of_ocr == 'photo':
+        await insert_photo_into_db(path, lang, user)
+        img_text = await ocr(path, lang)
+        await bot.send_message(callback.message.chat.id, img_text)
+        await state.finish()
+        started = False
+    elif type_of_ocr == 'video':
+        await insert_video_into_db(path, lang, user)
+        await bot.send_message(callback.message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
+        video_text = await video_ocr(path, lang)
+        for frame_text in video_text:
+            await bot.send_message(callback.message.chat.id, frame_text)
+        await state.finish()
+        started = False
+
+
+@dp.callback_query_handler(state=MySG.send_lang.state, text=['yes'])
+async def yes_button_handler(callback: CallbackQuery, state: FSMContext):
+    await bot.send_message(callback.message.chat.id,
+                           'Отправь мне язык на который надо перевести текст в формате en, ru, fr и т.д')
+    await state.set_state(MySG.send_lang_to_translate_and_ocr.state)
+
+
+@dp.message_handler(state=MySG.send_lang_to_translate_and_ocr.state, content_types=['text'])
+async def get_lang_to_translate_and_ocr(message: Message, state: FSMContext):
+    global started
+    lang_to_translate = message.text
+    data = await state.get_data()
+    lang = data.get('lang')
+    path = data.get('path')
+    type_of_ocr = data.get('type')
+    if type_of_ocr == 'photo':
+        await insert_photo_into_db(path, lang, message.from_user)
+        img_text = await ocr(path, lang)
+        to_send_text = await translate(img_text, lang_to_translate)
+        await bot.send_message(message.chat.id, to_send_text)
+        await state.finish()
+        started = False
+    elif type_of_ocr == 'video':
+        await insert_video_into_db(path, lang, message.from_user)
+        await bot.send_message(message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
+        video_text = await video_ocr(path, lang)
+        for frame_text in video_text:
+            to_send_text = await translate(frame_text, lang_to_translate)
+            await bot.send_message(message.chat.id, to_send_text)
+        await state.finish()
+        started = False
+
+
 if __name__ == '__main__':
-    asyncio.run(executor.start_polling(dp, skip_updates=True))
+    executor.start_polling(dp, skip_updates=True)
