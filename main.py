@@ -246,18 +246,24 @@ async def no_button_handler(callback: CallbackQuery, state: FSMContext):
     type_of_ocr = data.get('type')
     if type_of_ocr == 'photo':
         img_text = await ocr(path, lang)
-        img_text: str
-        img_text = img_text.replace('|', 'I')
-        await insert_photo_into_db(path, lang, img_text, user)
-        await bot.send_message(callback.message.chat.id, img_text)
+        if img_text:
+            img_text: str
+            img_text = img_text.replace('|', 'I')
+            await insert_photo_into_db(path, lang, img_text, user)
+            await bot.send_message(callback.message.chat.id, img_text)
+        else:
+            await bot.send_message(callback.message.chat.id, 'Не удалось распознать текст на картинке!')
         await state.finish()
     elif type_of_ocr == 'video':
         await bot.send_message(callback.message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
         video_text = await video_ocr(path, lang, user)
-        await insert_video_into_db(path, lang, video_text, user)
-        for frame_text in video_text:
-            frame_text = frame_text.replace('|', 'I')
-            await bot.send_message(callback.message.chat.id, frame_text)
+        if video_text:
+            await insert_video_into_db(path, lang, video_text, user)
+            for frame_text in video_text:
+                frame_text = frame_text.replace('|', 'I')
+                await bot.send_message(callback.message.chat.id, frame_text)
+        else:
+            await bot.send_message(callback.message.chat.id, 'Не удалось распознать текст на видео!')
         await state.finish()
 
 
@@ -277,19 +283,25 @@ async def get_lang_to_translate_and_ocr(message: Message, state: FSMContext):
     type_of_ocr = data.get('type')
     if type_of_ocr == 'photo':
         img_text = await ocr(path, lang)
-        img_text = img_text.replace('|', 'I')
-        await insert_photo_into_db(path, lang, img_text, message.from_user)
-        to_send_text = await translate(img_text, lang_to_translate)
-        await bot.send_message(message.chat.id, to_send_text)
+        if img_text:
+            img_text = img_text.replace('|', 'I')
+            await insert_photo_into_db(path, lang, img_text, message.from_user)
+            to_send_text = await translate(img_text, lang_to_translate)
+            await bot.send_message(message.chat.id, to_send_text)
+        else:
+            await bot.send_message(message.chat.id, 'Не удалось распознать текст на видео!')
         await state.finish()
     elif type_of_ocr == 'video':
         await bot.send_message(message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
         video_text = await video_ocr(path, lang, message.from_user)
-        await insert_video_into_db(path, lang, video_text, message.from_user)
-        for frame_text in video_text:
-            frame_text = frame_text.replace('|', 'I')
-            to_send_text = await translate(frame_text, lang_to_translate)
-            await bot.send_message(message.chat.id, to_send_text)
+        if video_text:
+            await insert_video_into_db(path, lang, video_text, message.from_user)
+            for frame_text in video_text:
+                frame_text = frame_text.replace('|', 'I')
+                to_send_text = await translate(frame_text, lang_to_translate)
+                await bot.send_message(message.chat.id, to_send_text)
+        else:
+            await bot.send_message(message.chat.id, 'Не удалось распознать текст на видео!')
         await state.finish()
 
 
