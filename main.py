@@ -251,7 +251,6 @@ async def no_button_handler(callback: CallbackQuery, state: FSMContext):
         await insert_photo_into_db(path, lang, img_text, user)
         await bot.send_message(callback.message.chat.id, img_text)
         await state.finish()
-        started = False
     elif type_of_ocr == 'video':
         await bot.send_message(callback.message.chat.id, 'Пожалуйста, подождите. Видео обрабатывается...')
         video_text = await video_ocr(path, lang, user)
