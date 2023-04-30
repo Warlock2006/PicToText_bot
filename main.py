@@ -16,7 +16,7 @@ API_TOKEN = os.environ['TOKEN']
 storage = MemoryStorage()
 bot = Bot(API_TOKEN)
 dp = Dispatcher(bot, storage=storage)
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Fedor\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+pytesseract.pytesseract.tesseract_cmd = os.environ['TESSERACT']
 
 
 class OcrDialog(StatesGroup):
